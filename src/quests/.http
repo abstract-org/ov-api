@@ -1,0 +1,15 @@
+POST http://localhost:3030/quests
+Content-Type: application/json
+
+{
+  "quests": [
+    {
+      "kind": "TITLE",
+      "content": "some title content",
+      "creator_hash": "0x0012334567890ABCDEF",
+      "initial_balance": 1000
+    }
+  ]
+}
+
+###

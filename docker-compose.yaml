@@ -1,0 +1,29 @@
+# Use postgres/postgres user/password credentials
+# To start use: docker-compose up -d
+# To stop use: docker-compose stop
+# To rebuild it before start: docker-compose up -d --build
+#
+# To run only postgres DB service: docker-compose up -d pow-pg
+
+version: '2.1'
+
+services:
+
+  postgres_db:
+    image: postgres:alpine
+    container_name: ${DB_DOCKER_CONTAINER:-postgres_db}
+    ports:
+      - ${DB_PORT:-5432}:5432
+    restart: always
+    environment:
+      POSTGRES_USER: $DB_USERNAME
+      POSTGRES_PASSWORD: $DB_PASSWORD
+      POSTGRES_DB: $DB_DATABASE
+    healthcheck:
+      test: "exit 0"
+    networks:
+      - default
+
+networks:
+  default:
+    driver: bridge
