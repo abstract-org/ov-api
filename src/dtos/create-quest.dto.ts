@@ -10,7 +10,7 @@ export class CreateQuestDto {
   readonly content: string;
 
   @IsString()
-  readonly creator_hash: string;
+  readonly creator_hash?: string;
 
   @IsNumber()
   readonly initial_balance: number;

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Quest } from '../entities/quest.entity';
 import { CreateQuestDto } from '../dtos/create-quest.dto';
+import { sha256 } from '../helpers/createHash';
 
 const DEFAULT_API_CREATOR_HASH = '111111111111111111111';
 
@@ -16,13 +17,14 @@ export class QuestService {
   async createQuests(createQuestsDto: CreateQuestDto[]): Promise<Quest[]> {
     const quests = createQuestsDto.map(this.dtoToQuestEntity);
 
-    return this.questRepository.save(quests);
+    return this.questRepository.save<Quest>(quests);
   }
 
   dtoToQuestEntity(dto: CreateQuestDto): Quest {
     const quest = new Quest();
     quest.kind = dto.kind;
     quest.content = dto.content;
+    quest.hash = sha256(`${quest.kind}${quest.content}`);
     quest.creator_hash = dto.creator_hash || DEFAULT_API_CREATOR_HASH;
     quest.initial_balance = dto.initial_balance;
 
