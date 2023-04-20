@@ -1,22 +1,22 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { PoolsService } from './pools.service';
 import { Pool } from '../entities/pool.entity';
-import { CreatePoolDto } from '../dtos/create-pool.dto';
-import { CreateValueLinkDto } from '../dtos/create-value-link.dto';
+import { CreatePoolsDto } from '../dtos/create-pools.dto';
+import { CreateValueLinksDto } from '../dtos/create-value-links.dto';
 
-@Controller('pools')
+@Controller()
 export class PoolsController {
   constructor(private readonly poolsService: PoolsService) {}
 
   @Post()
-  async createPool(@Body() createPoolDto: CreatePoolDto): Promise<Pool> {
-    return await this.poolsService.createPool(createPoolDto);
+  async createPools(@Body() createPoolsDto: CreatePoolsDto) {
+    return this.poolsService.createPools(createPoolsDto.pools);
   }
 
-  @Post('value-link')
+  @Post('value-links')
   async createValueLink(
-    @Body() createValueLinkDto: CreateValueLinkDto,
-  ): Promise<Pool> {
-    return await this.poolsService.createValueLink(createValueLinkDto);
+    @Body() createValueLinksDto: CreateValueLinksDto,
+  ): Promise<Pool[]> {
+    return this.poolsService.createValueLinks(createValueLinksDto.pools);
   }
 }

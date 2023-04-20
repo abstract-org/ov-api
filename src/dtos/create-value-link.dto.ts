@@ -1,9 +1,9 @@
-import { IsString, IsNotEmpty, IsObject } from 'class-validator';
+import { IsString, IsNotEmpty } from 'class-validator';
 
 export class CreateValueLinkDto {
   @IsString()
   @IsNotEmpty()
-  readonly type: string;
+  readonly kind: string;
 
   @IsString()
   @IsNotEmpty()
@@ -12,7 +12,4 @@ export class CreateValueLinkDto {
   @IsString()
   @IsNotEmpty()
   readonly quest_right_hash: string;
-
-  @IsObject()
-  readonly positions: object;
 }
