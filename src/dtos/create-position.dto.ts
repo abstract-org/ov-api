@@ -1,14 +1,14 @@
-import { IsNumber, IsArray, ArrayMinSize } from 'class-validator';
+import { IsNumber, IsString, IsNotEmpty } from 'class-validator';
 
 export class CreatePositionDto {
+  @IsString()
+  @IsNotEmpty()
+  readonly cited_quest: string;
+
+  @IsString()
+  @IsNotEmpty()
+  readonly citing_quest: string;
+
   @IsNumber()
-  readonly pool_id: number;
-
-  @IsArray()
-  @ArrayMinSize(2)
-  readonly range: [number, number];
-
-  @IsArray()
-  @ArrayMinSize(2)
-  readonly amounts: [number, number];
+  readonly amount: number;
 }

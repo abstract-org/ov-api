@@ -7,10 +7,14 @@ import { Pool } from '../entities/pool.entity';
 import { Quest } from '../entities/quest.entity';
 import { PoolState } from '../entities/pool-state.entity';
 import { INestApplication } from '@nestjs/common';
+import { QuestService } from '../quests/quests.service';
+import { Repository } from 'typeorm';
+import { sha256 } from '../helpers/createHash';
 
 describe('PoolsController', () => {
   let controller: PoolsController;
   let app: INestApplication;
+  let questRepository: Repository<Quest>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -36,19 +40,36 @@ describe('PoolsController', () => {
         TypeOrmModule.forFeature([Pool, Quest, PoolState]),
       ],
       controllers: [PoolsController],
-      providers: [PoolsService],
+      providers: [PoolsService, QuestService],
     }).compile();
 
     controller = module.get<PoolsController>(PoolsController);
+    questRepository = module.get('QuestRepository');
     app = module.createNestApplication();
     await app.init();
   });
+
+  const saveQuestsWithHashes = async (hashes: string[]): Promise<void> => {
+    const quests = hashes.map((hash) => {
+      const quest = new Quest();
+      quest.kind = 'TEST_KIND';
+      quest.content = 'TEST_CONTENT';
+      quest.hash = hash;
+      quest.creator_hash = 'test_creator_hash';
+      quest.initial_balance = 1000;
+
+      return quest;
+    });
+
+    await questRepository.save<Quest>(quests);
+  };
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
 
   it('should create pools', async () => {
+    await saveQuestsWithHashes(['test_quest_hash_1', 'test_quest_hash_2']);
     const createPoolsDto = {
       pools: [
         {
@@ -71,6 +92,12 @@ describe('PoolsController', () => {
   });
 
   it('should create value links', async () => {
+    await saveQuestsWithHashes([
+      'test_quest_left_hash_1',
+      'test_quest_right_hash_1',
+      'test_quest_left_hash_2',
+      'test_quest_right_hash_2',
+    ]);
     const createValueLinksDto = {
       pools: [
         {
