@@ -1,7 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import {
+  SwaggerModule,
+  DocumentBuilder,
+  SwaggerDocumentOptions,
+} from '@nestjs/swagger';
 import { AppModule } from './app.module';
 const DEFAULT_APP_PORT = 3000;
 
@@ -16,9 +20,13 @@ async function bootstrap() {
       'RESTful API using OpenValue SDK Modules to create Quests, Pools and Positions',
     )
     .setVersion('1.0')
-    // .addTag('OpenValue API')
+    .addTag('api')
     .build();
-  const document = SwaggerModule.createDocument(app, docsConfig);
+  const docOptions: SwaggerDocumentOptions = {
+    operationIdFactory: (controllerKey: string, methodKey: string) =>
+      `${controllerKey}.${methodKey}`,
+  };
+  const document = SwaggerModule.createDocument(app, docsConfig, docOptions);
   SwaggerModule.setup('docs', app, document);
 
   await app.listen(APP_PORT);

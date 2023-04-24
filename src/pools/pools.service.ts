@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Pool } from '../entities/pool.entity';
@@ -98,6 +98,7 @@ export class PoolsService {
     poolState.quest_right_price = data.questRightPrice;
     poolState.quest_left_volume = data.questLeftVolume;
     poolState.quest_right_volume = data.questRightVolume;
+    poolState.pool_hash = data.hash;
 
     return poolState;
   }
@@ -108,7 +109,7 @@ export class PoolsService {
     });
 
     if (!quest) {
-      throw new Error(`Quest not found for hash: ${hash}`);
+      throw new NotFoundException(`Quest not found for hash: ${hash}`);
     }
 
     return Modules.Quest.create(quest.hash, quest.kind, quest.content);
