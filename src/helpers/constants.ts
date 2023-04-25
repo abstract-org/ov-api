@@ -19,3 +19,30 @@ export const DEFAULT_QUEST = {
 };
 
 export const DEFAULT_API_CREATOR_HASH = '111111111111111111111';
+
+export const INITIAL_LIQUIDITY = [
+  {
+    priceMin: 1,
+    priceMax: 1000000,
+    tokenA: 0,
+    tokenB: 5000,
+  },
+  {
+    priceMin: 20,
+    priceMax: 1000000,
+    tokenA: 0,
+    tokenB: 5000,
+  },
+  {
+    priceMin: 50,
+    priceMax: 1000000,
+    tokenA: 0,
+    tokenB: 5000,
+  },
+  {
+    priceMin: 200,
+    priceMax: 1000000,
+    tokenA: 0,
+    tokenB: 5000,
+  },
+];

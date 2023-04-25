@@ -2,7 +2,7 @@ import { Quest } from '../entities/quest.entity';
 import { makeContentHash } from './createHash';
 
 export const makeQuestName = (
-  { kind, content, hash }: Partial<Pick<Quest, 'kind' | 'content' | 'hash'>>,
+  { kind, content }: Partial<Pick<Quest, 'kind' | 'content'>>,
   forceName?: string,
 ) => {
   if (forceName) {

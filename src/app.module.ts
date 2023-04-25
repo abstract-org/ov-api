@@ -14,6 +14,7 @@ import { PoolsController } from './pools/pools.controller';
 import { QuestService } from './quests/quests.service';
 import { PoolsService } from './pools/pools.service';
 import { QuestsModule } from './quests/quests.module';
+import { PoolsModule } from './pools/pools.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { QuestsModule } from './quests/quests.module';
       WalletBalance,
     ]),
     QuestsModule,
+    PoolsModule,
   ],
   controllers: [AppController, QuestController, PoolsController],
   providers: [AppService, QuestService, PoolsService],

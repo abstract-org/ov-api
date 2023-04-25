@@ -3,7 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Quest } from '../entities/quest.entity';
 import { CreateQuestDto } from '../dtos/create-quest.dto';
-import { sha256 } from '../helpers/createHash';
 import { Modules } from '@abstract-org/sdk';
 import { DEFAULT_API_CREATOR_HASH, DEFAULT_QUEST } from '../helpers/constants';
 import { makeQuestName } from '../helpers/makeQuestName';

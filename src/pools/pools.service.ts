@@ -1,51 +1,20 @@
-import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotAcceptableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Pool } from '../entities/pool.entity';
 import { CreatePoolDto } from '../dtos/create-pool.dto';
-import { Quest } from '../entities/quest.entity';
 import { PoolState } from '../entities/pool-state.entity';
 import { Modules } from '@abstract-org/sdk';
 import { CreateValueLinkDto } from '../dtos/create-value-link.dto';
 import { CreatePositionDto } from '../dtos/create-position.dto';
 import { QuestService } from '../quests/quests.service';
-import { POOL_TYPE } from '../helpers/constants';
-import { makeQuestName } from '../helpers/makeQuestName';
-
-const INITIAL_LIQUIDITY = [
-  {
-    priceMin: 1,
-    priceMax: 1000000,
-    tokenA: 0,
-    tokenB: 5000,
-  },
-  {
-    priceMin: 20,
-    priceMax: 1000000,
-    tokenA: 0,
-    tokenB: 5000,
-  },
-  {
-    priceMin: 50,
-    priceMax: 1000000,
-    tokenA: 0,
-    tokenB: 5000,
-  },
-  {
-    priceMin: 200,
-    priceMax: 1000000,
-    tokenA: 0,
-    tokenB: 5000,
-  },
-];
+import { INITIAL_LIQUIDITY, POOL_KIND, POOL_TYPE } from '../helpers/constants';
 
 @Injectable()
 export class PoolsService {
   constructor(
     @InjectRepository(Pool)
     private poolRepository: Repository<Pool>,
-    @InjectRepository(Quest)
-    private questRepository: Repository<Quest>,
     @InjectRepository(PoolState)
     private poolStateRepository: Repository<PoolState>,
     private readonly questService: QuestService,
@@ -258,11 +227,13 @@ export class PoolsService {
         crossPool,
         citedQuestPool,
         citingQuestPoolEntity,
-        PRICE_RANGE_MULTIPLIER,
+        positionDto.price_range_multiplier || PRICE_RANGE_MULTIPLIER,
       );
 
       if (!priceRange) {
-        // TODO: throw new HttpException('priceRange');
+        throw new NotAcceptableException(
+          `Can not calculate priceRange for pool ${crossPool.hash}`,
+        );
       }
 
       // Reset price to find active liquidity during citeQuest
@@ -277,15 +248,17 @@ export class PoolsService {
       );
 
       if (!totalIn && !totalOut) {
-        throw new Error('');
+        throw new NotAcceptableException(
+          `Could not open position for pool ${crossPool.hash}`,
+        );
       }
 
       const crossPoolEntity = new Pool();
       crossPoolEntity.quest_left_hash = citedQuest.hash;
       crossPoolEntity.quest_right_hash = citingQuest.hash;
-      crossPoolEntity.kind = 'CITATION';
+      crossPoolEntity.kind = POOL_KIND.CITATION;
       crossPoolEntity.hash = crossPool.hash;
-      crossPoolEntity.type = 'value-link';
+      crossPoolEntity.type = POOL_TYPE.VALUE_LINK;
       crossPoolEntity.positions = crossPool.pos.values();
 
       const crossPoolStateEntity =
