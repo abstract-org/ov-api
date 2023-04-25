@@ -15,9 +15,10 @@ export const DEFAULT_QUEST = {
   KIND: 'TOKEN',
   CONTENT: 'USDC',
   NAME: makeQuestName({ kind: 'TOKEN', content: 'USDC' }),
-  HASH: sha256(makeQuestName({ kind: 'TOKEN', content: 'USDC' })),
+  HASH: sha256('TOKEN' + 'USDC'),
 };
 
+export const DEFAULT_INITIAL_BALANCE = 0;
 export const DEFAULT_API_CREATOR_HASH = '111111111111111111111';
 
 export const INITIAL_LIQUIDITY = [

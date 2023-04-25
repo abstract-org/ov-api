@@ -1,4 +1,4 @@
-import { IsNumber, IsString, IsNotEmpty } from 'class-validator';
+import { IsNumber, IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreatePositionDto {
@@ -18,9 +18,11 @@ export class CreatePositionDto {
 
   @ApiProperty({ default: 100, required: false })
   @IsNumber()
-  readonly amount: number;
+  @IsOptional()
+  readonly amount?: number;
 
   @ApiProperty({ default: 2, required: false })
   @IsNumber()
+  @IsOptional()
   readonly price_range_multiplier?: number;
 }

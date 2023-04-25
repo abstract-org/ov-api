@@ -16,8 +16,8 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getOK()).toBe('OK');
+    it('should return OK', () => {
+      expect(appController.getOK()).toBe('OpenValue API: OK');
     });
   });
 

@@ -73,7 +73,7 @@ export class PoolsService {
     poolState.quest_right_price = data.questRightPrice;
     poolState.quest_left_volume = data.questLeftVolume;
     poolState.quest_right_volume = data.questRightVolume;
-    poolState.pool_hash = data.hash;
+    poolState.pool_hash = pool.hash;
 
     return poolState;
   }
@@ -81,7 +81,8 @@ export class PoolsService {
   async createValueLinks(
     valueLinksDtoArray: CreateValueLinkDto[],
   ): Promise<Pool[]> {
-    const pools = [];
+    const poolEntities: Pool[] = [];
+    const poolStateEntities: PoolState[] = [];
     for (const valueLink of valueLinksDtoArray) {
       const { kind, quest_left_hash, quest_right_hash } = valueLink;
       const leftQuest = await this.questService.questInstanceFromDb(
@@ -101,15 +102,19 @@ export class PoolsService {
       poolEntity.type = 'value-link';
       poolEntity.positions = poolInstance.pos.values();
 
-      const poolState = this.poolStateEntityFromPoolInstance(poolInstance);
-
-      await this.poolRepository.save(poolEntity);
-      await this.poolStateRepository.save(poolState);
-
-      pools.push(poolEntity);
+      poolEntities.push(poolEntity);
+      poolStateEntities.push(
+        this.poolStateEntityFromPoolInstance(poolInstance),
+      );
     }
 
-    return pools;
+    const poolStatesSaved = await this.poolStateRepository.save(
+      poolStateEntities,
+    );
+    console.log('### DEBUG', poolStatesSaved);
+    await this.poolRepository.save(poolEntities);
+
+    return poolEntities;
   }
 
   async findQuestPool(quest_hash: string): Promise<Pool> {

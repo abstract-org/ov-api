@@ -4,7 +4,11 @@ import { Repository } from 'typeorm';
 import { Quest } from '../entities/quest.entity';
 import { CreateQuestDto } from '../dtos/create-quest.dto';
 import { Modules } from '@abstract-org/sdk';
-import { DEFAULT_API_CREATOR_HASH, DEFAULT_QUEST } from '../helpers/constants';
+import {
+  DEFAULT_API_CREATOR_HASH,
+  DEFAULT_INITIAL_BALANCE,
+  DEFAULT_QUEST,
+} from '../helpers/constants';
 import { makeQuestName } from '../helpers/makeQuestName';
 
 @Injectable()
@@ -22,7 +26,6 @@ export class QuestService {
 
   dtoToQuestEntity(dto: CreateQuestDto): Quest {
     const questName = makeQuestName({ kind: dto.kind, content: dto.content });
-    const { initial_balance } = dto;
     const questInstance = Modules.Quest.create(
       questName,
       dto.kind,
@@ -35,7 +38,8 @@ export class QuestService {
     questEntity.content = questInstance.content;
     questEntity.hash = questInstance.hash;
     questEntity.creator_hash = questInstance.creator_hash;
-    questEntity.initial_balance = initial_balance;
+    questEntity.initial_balance =
+      dto.initial_balance || DEFAULT_INITIAL_BALANCE;
 
     return questEntity;
   }
