@@ -5,10 +5,12 @@ import { Pool } from '../entities/pool.entity';
 import { CreatePoolDto } from '../dtos/create-pool.dto';
 import { Quest } from '../entities/quest.entity';
 import { PoolState } from '../entities/pool-state.entity';
-import { sha256 } from '../helpers/createHash';
 import { Modules } from '@abstract-org/sdk';
 import { CreateValueLinkDto } from '../dtos/create-value-link.dto';
 import { CreatePositionDto } from '../dtos/create-position.dto';
+import { QuestService } from '../quests/quests.service';
+import { POOL_TYPE } from '../helpers/constants';
+import { makeQuestName } from '../helpers/makeQuestName';
 
 const INITIAL_LIQUIDITY = [
   {
@@ -46,16 +48,20 @@ export class PoolsService {
     private questRepository: Repository<Quest>,
     @InjectRepository(PoolState)
     private poolStateRepository: Repository<PoolState>,
+    private readonly questService: QuestService,
   ) {}
 
   async createPools(createPoolsDto: CreatePoolDto[]): Promise<Pool[]> {
-    const defaultQuestInstance = await this.getDefaultQuest();
-    const pools = [];
+    const defaultQuestInstance =
+      await this.questService.ensureDefaultQuestInstance();
 
+    const poolEntities: Pool[] = [];
+    const poolStateEntities: PoolState[] = [];
     for (const { quest_hash } of createPoolsDto) {
       const leftQuest = defaultQuestInstance;
-      const rightQuest = await this.questInstanceFromDb(quest_hash);
-
+      const rightQuest = await this.questService.questInstanceFromDb(
+        quest_hash,
+      );
       const poolInstance = Modules.Pool.create(leftQuest, rightQuest, null);
       for (const liq of INITIAL_LIQUIDITY) {
         poolInstance.openPosition(
@@ -69,21 +75,21 @@ export class PoolsService {
       const poolEntity = new Pool();
       poolEntity.quest_left_hash = leftQuest.hash;
       poolEntity.quest_right_hash = rightQuest.hash;
-      // poolEntity.hash = sha256(`${leftQuest.hash}${rightQuest.hash}`);
       poolEntity.hash = poolInstance.hash;
-      poolEntity.type = 'USDC';
+      poolEntity.type = POOL_TYPE.QUEST;
       poolEntity.kind = null;
       poolEntity.positions = poolInstance.pos.values();
 
-      const poolState = this.poolStateEntityFromPoolInstance(poolInstance);
-
-      await this.poolStateRepository.save(poolState);
-      await this.poolRepository.save(poolEntity);
-
-      pools.push(poolEntity);
+      poolEntities.push(poolEntity);
+      poolStateEntities.push(
+        this.poolStateEntityFromPoolInstance(poolInstance),
+      );
     }
 
-    return pools;
+    await this.poolStateRepository.save(poolStateEntities);
+    await this.poolRepository.save(poolEntities);
+
+    return poolEntities;
   }
 
   poolStateEntityFromPoolInstance(pool) {
@@ -103,49 +109,18 @@ export class PoolsService {
     return poolState;
   }
 
-  async questInstanceFromDb(hash: string): Promise<Modules.Quest> {
-    const quest = await this.questRepository.findOne({
-      where: { hash },
-    });
-
-    if (!quest) {
-      throw new NotFoundException(`Quest not found for hash: ${hash}`);
-    }
-
-    return Modules.Quest.create(quest.hash, quest.kind, quest.content);
-  }
-
-  async getDefaultQuest(): Promise<Modules.Quest> {
-    const DEFAULT_QUEST_NAME = 'USDC';
-    const DEFAULT_QUEST_KIND = 'TOKEN';
-    const DEFAULT_QUEST_CONTENT = 'USDC';
-    const defaultQuestEntity = await this.questRepository.findOne({
-      where: {
-        kind: DEFAULT_QUEST_KIND,
-        content: DEFAULT_QUEST_CONTENT,
-      },
-    });
-
-    if (!defaultQuestEntity) {
-      throw new Error('Default quest not found');
-    }
-
-    return Modules.Quest.create(
-      DEFAULT_QUEST_NAME,
-      defaultQuestEntity.kind,
-      defaultQuestEntity.content,
-      defaultQuestEntity.creator_hash,
-    );
-  }
-
   async createValueLinks(
     valueLinksDtoArray: CreateValueLinkDto[],
   ): Promise<Pool[]> {
     const pools = [];
     for (const valueLink of valueLinksDtoArray) {
       const { kind, quest_left_hash, quest_right_hash } = valueLink;
-      const leftQuest = await this.questInstanceFromDb(quest_left_hash);
-      const rightQuest = await this.questInstanceFromDb(quest_right_hash);
+      const leftQuest = await this.questService.questInstanceFromDb(
+        quest_left_hash,
+      );
+      const rightQuest = await this.questService.questInstanceFromDb(
+        quest_right_hash,
+      );
 
       const poolInstance = Modules.Pool.create(leftQuest, rightQuest, null);
 
@@ -169,8 +144,8 @@ export class PoolsService {
   }
 
   async findQuestPool(quest_hash: string): Promise<Pool> {
-    const defaultQuest = await this.getDefaultQuest();
-    const quest = await this.questInstanceFromDb(quest_hash);
+    const defaultQuest = await this.questService.ensureDefaultQuestInstance();
+    const quest = await this.questService.questInstanceFromDb(quest_hash);
 
     return this.poolRepository.findOne({
       where: {
@@ -184,8 +159,12 @@ export class PoolsService {
     quest_left_hash: string,
     quest_right_hash: string,
   ): Promise<Pool> {
-    const questLeft = await this.questInstanceFromDb(quest_left_hash);
-    const questRight = await this.questInstanceFromDb(quest_right_hash);
+    const questLeft = await this.questService.questInstanceFromDb(
+      quest_left_hash,
+    );
+    const questRight = await this.questService.questInstanceFromDb(
+      quest_right_hash,
+    );
 
     if (!questLeft) {
       throw new Error(`Can not find quest [${quest_left_hash}] for pool`);
@@ -215,18 +194,30 @@ export class PoolsService {
     return latestPoolState;
   }
 
+  async savePoolStatesForPoolInstances(
+    pools: Modules.Pool[],
+  ): Promise<PoolState[]> {
+    const poolStates: PoolState[] = [];
+    for (const pool of pools) {
+      const poolState = this.poolStateEntityFromPoolInstance(pool);
+      poolStates.push(poolState);
+    }
+
+    return this.poolStateRepository.save(poolStates);
+  }
+
   async createPositions(
     positionsDtoArray: CreatePositionDto[],
   ): Promise<Pool[]> {
     const pools = [] as Pool[];
     const poolStates = [] as PoolState[];
-    const defaultQuest = await this.getDefaultQuest();
+    const defaultQuest = await this.questService.ensureDefaultQuestInstance();
 
     for (const positionDto of positionsDtoArray) {
       const { cited_quest, citing_quest, amount } = positionDto;
       const [citedQuest, citingQuest] = await Promise.all([
-        this.questInstanceFromDb(cited_quest),
-        this.questInstanceFromDb(citing_quest),
+        this.questService.questInstanceFromDb(cited_quest),
+        this.questService.questInstanceFromDb(citing_quest),
       ]);
 
       const citedQuestPoolEntity = await this.findQuestPool(cited_quest);
@@ -269,6 +260,10 @@ export class PoolsService {
         citingQuestPoolEntity,
         PRICE_RANGE_MULTIPLIER,
       );
+
+      if (!priceRange) {
+        // TODO: throw new HttpException('priceRange');
+      }
 
       // Reset price to find active liquidity during citeQuest
       crossPool.curPrice = 0;

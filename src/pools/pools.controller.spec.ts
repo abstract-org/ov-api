@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PoolsController } from './pools.controller';
 import { PoolsService } from './pools.service';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Pool } from '../entities/pool.entity';
 import { Quest } from '../entities/quest.entity';
@@ -14,6 +14,64 @@ import { CreatePositionsDto } from '../dtos/create-positions.dto';
 import * as request from 'supertest';
 import { faker } from '@faker-js/faker';
 import { Modules } from '@abstract-org/sdk';
+import { Repository } from 'typeorm';
+import { POOL_KIND, POOL_TYPE } from '../helpers/constants';
+
+async function prepareQuests(app: INestApplication) {
+  const createQuestsDto: CreateQuestDto[] = [
+    {
+      kind: 'TEST_QUEST',
+      content: 'Test111', // faker.lorem.paragraph(),
+      initial_balance: 1000,
+    },
+    {
+      kind: 'TEST_QUEST',
+      content: 'Test222', // faker.lorem.paragraph(),
+      initial_balance: 1000,
+    },
+    {
+      kind: 'TEST_QUEST',
+      content: 'Test333', // faker.lorem.paragraph(),
+      initial_balance: 1000,
+    },
+  ];
+
+  return app.get(QuestService).createQuests(createQuestsDto);
+}
+
+async function preparePools(savedQuests: Quest[], app: INestApplication) {
+  const createPoolsDto: CreatePoolDto[] = savedQuests.map((quest) => ({
+    quest_hash: quest.hash,
+  }));
+  const savedPools = await app.get(PoolsService).createPools(createPoolsDto);
+  const defaultQuestInstance = await app
+    .get(QuestService)
+    .ensureDefaultQuestInstance();
+
+  const poolInstances: Modules.Pool[] = [];
+  for (const poolEntity of savedPools) {
+    const rightQuest = await app
+      .get(QuestService)
+      .questInstanceFromDb(poolEntity.quest_right_hash);
+    const poolInstance = Modules.Pool.create(
+      defaultQuestInstance,
+      rightQuest,
+      0,
+    );
+    poolInstance.hydratePositions(poolEntity.positions);
+    poolInstances.push(poolInstance);
+  }
+
+  await app.get(PoolsService).savePoolStatesForPoolInstances(poolInstances);
+
+  return savedPools;
+}
+
+async function clearTables(repos) {
+  await repos.poolStateRepository.query('DELETE FROM pool_states');
+  await repos.poolRepository.query('DELETE FROM pools');
+  await repos.questRepository.query('DELETE FROM quests');
+}
 
 describe('PoolsController', () => {
   let controller: PoolsController;
@@ -21,6 +79,7 @@ describe('PoolsController', () => {
   let questService: QuestService;
   let savedQuests: Quest[];
   let savedPools: Pool[];
+  let repos: Record<string, Repository<any>>;
 
   const saveQuestsWithHashes = async (hashes: string[]): Promise<void> => {
     const quests = hashes.map((hash) => {
@@ -37,15 +96,7 @@ describe('PoolsController', () => {
     await questService.createQuests(quests);
   };
 
-  async function savePoolStateForPool(pool: Modules.Pool): Promise<PoolState> {
-    const poolState = await app
-      .get('PoolsService')
-      .poolStateEntityFromPoolInstance(pool);
-
-    return app.get('PoolStateRepository').save(poolState);
-  }
-
-  beforeEach(async () => {
+  beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
@@ -72,47 +123,17 @@ describe('PoolsController', () => {
       providers: [PoolsService, QuestService],
     }).compile();
 
-    controller = module.get<PoolsController>(PoolsController);
-    questService = module.get(QuestService);
     app = module.createNestApplication();
     await app.init();
-
-    // Save Quests
-    const defaultQuest = await questService.ensureDefaultQuest();
-    const createQuestsDto: CreateQuestDto[] = [
-      {
-        kind: 'Test Quest 1',
-        content: faker.lorem.paragraph(),
-        initial_balance: 1000,
-      },
-      {
-        kind: 'Test Quest 2',
-        content: faker.lorem.paragraph(),
-        initial_balance: 1000,
-      },
-      {
-        kind: 'Test Quest 3',
-        content: faker.lorem.paragraph(),
-        initial_balance: 1000,
-      },
-    ];
-    savedQuests = await app.get(QuestService).createQuests(createQuestsDto);
-
-    // Save Pools
-    const createPoolsDto: CreatePoolDto[] = savedQuests.map((quest) => ({
-      quest_hash: quest.hash,
-    }));
-    savedPools = await app.get(PoolsService).createPools(createPoolsDto);
-    for (const poolEntity of savedPools) {
-      const leftQuest = defaultQuest;
-      const rightQuest = await app
-        .get(PoolsService)
-        .questInstanceFromDb(poolEntity.quest_right_hash);
-      const poolInstance = Modules.Pool.create(leftQuest, rightQuest, 0);
-      poolInstance.hydratePositions(poolEntity.positions);
-
-      await savePoolStateForPool(poolInstance);
-    }
+    repos = {
+      questRepository: module.get<Repository<Quest>>(getRepositoryToken(Quest)),
+      poolRepository: module.get<Repository<Pool>>(getRepositoryToken(Pool)),
+      poolStateRepository: module.get<Repository<PoolState>>(
+        getRepositoryToken(PoolState),
+      ),
+    };
+    questService = module.get(QuestService);
+    controller = module.get<PoolsController>(PoolsController);
   });
 
   it('should be defined', () => {
@@ -120,15 +141,28 @@ describe('PoolsController', () => {
   });
 
   describe('POST /pools', () => {
+    let defaultQuestInstance;
+
+    beforeEach(async () => {
+      await clearTables(repos);
+      savedQuests = await prepareQuests(app);
+      defaultQuestInstance = await app
+        .get(QuestService)
+        .ensureDefaultQuestInstance();
+    });
+
     it('should create pools', async () => {
-      await saveQuestsWithHashes(['test_quest_hash_1', 'test_quest_hash_2']);
+      // await saveQuestsWithHashes(['test_quest_hash_1', 'test_quest_hash_2']);
       const createPoolsDto = {
         pools: [
           {
-            quest_hash: 'test_quest_hash_1',
+            quest_hash: savedQuests[0].hash,
           },
           {
-            quest_hash: 'test_quest_hash_2',
+            quest_hash: savedQuests[1].hash,
+          },
+          {
+            quest_hash: savedQuests[2].hash,
           },
         ],
       };
@@ -140,6 +174,17 @@ describe('PoolsController', () => {
       response.forEach((pool) => {
         expect(pool).toHaveProperty('id');
         expect(pool).toHaveProperty('hash');
+      });
+
+      const poolsCreated = await repos.poolRepository.find();
+      createPoolsDto.pools.forEach(({ quest_hash }) => {
+        const pool = poolsCreated.find(
+          (poolCreated) => poolCreated.quest_right_hash === quest_hash,
+        );
+
+        expect(pool).toBeDefined();
+        expect(pool.quest_left_hash).toEqual(defaultQuestInstance.hash);
+        expect(pool.quest_right_hash).toEqual(quest_hash);
       });
     });
 
@@ -157,6 +202,12 @@ describe('PoolsController', () => {
   });
 
   describe('POST /value-links', () => {
+    beforeEach(async () => {
+      await clearTables(repos);
+      savedQuests = await prepareQuests(app);
+      savedPools = await preparePools(savedQuests, app);
+    });
+
     it('should create value links', async () => {
       await saveQuestsWithHashes([
         'test_quest_left_hash_1',
@@ -167,14 +218,19 @@ describe('PoolsController', () => {
       const createValueLinksDto = {
         pools: [
           {
-            kind: 'LINK_KIND_1',
-            quest_left_hash: 'test_quest_left_hash_1',
-            quest_right_hash: 'test_quest_right_hash_1',
+            kind: 'BLOCK',
+            quest_left_hash: savedQuests[0].hash,
+            quest_right_hash: savedQuests[1].hash,
           },
           {
-            kind: 'LINK_KIND_2',
-            quest_left_hash: 'test_quest_left_hash_2',
-            quest_right_hash: 'test_quest_right_hash_2',
+            kind: 'BLOCK',
+            quest_left_hash: savedQuests[0].hash,
+            quest_right_hash: savedQuests[2].hash,
+          },
+          {
+            kind: 'CITATION',
+            quest_left_hash: savedQuests[1].hash,
+            quest_right_hash: savedQuests[2].hash,
           },
         ],
       };
@@ -207,8 +263,22 @@ describe('PoolsController', () => {
     });
   });
 
-  describe('POST /positions', () => {
-    beforeAll(() => {});
+  describe.only('POST /positions', () => {
+    let crossPool: Pool;
+
+    beforeEach(async () => {
+      await clearTables(repos);
+      savedQuests = await prepareQuests(app);
+      savedPools = await preparePools(savedQuests, app);
+      [crossPool] = await app.get(PoolsService).createValueLinks([
+        {
+          kind: POOL_KIND.CITATION,
+          quest_left_hash: savedQuests[1].hash,
+          quest_right_hash: savedQuests[2].hash,
+        },
+      ]);
+    });
+
     it('should create a new position and return an array of created pools', async () => {
       const createPositionsDto: CreatePositionsDto = {
         positions: [
@@ -236,8 +306,8 @@ describe('PoolsController', () => {
         expect(pool).toHaveProperty('hash');
         expect(pool).toHaveProperty('quest_left_hash');
         expect(pool).toHaveProperty('quest_right_hash');
-        expect(pool).toHaveProperty('kind', 'CITATION');
-        expect(pool).toHaveProperty('type', 'value-link');
+        expect(pool).toHaveProperty('kind', POOL_KIND.CITATION);
+        expect(pool).toHaveProperty('type', POOL_TYPE.VALUE_LINK);
         expect(pool).toHaveProperty('positions');
       });
     });
