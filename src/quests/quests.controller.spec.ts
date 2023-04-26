@@ -15,11 +15,12 @@ import {
 import { Modules } from '@abstract-org/sdk';
 import { CreateQuestDto } from '../dtos/create-quest.dto';
 import { Repository } from 'typeorm';
+import { clearTables } from '../../test/helpers/testHelpers';
 
 describe('QuestController', () => {
   let controller: QuestController;
   let app: INestApplication;
-  let questRepository: Repository<Quest>;
+  let repos: Record<string, Repository<any>>;
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -39,10 +40,10 @@ describe('QuestController', () => {
             password: configService.get<string>('DB_PASSWORD'),
             database: configService.get<string>('DB_DATABASE'),
             entities: [Quest, Pool, PoolState],
-            synchronize: true,
+            synchronize: false,
           }),
         }),
-        TypeOrmModule.forFeature([Quest]),
+        TypeOrmModule.forFeature([Quest, Pool, PoolState]),
       ],
       controllers: [QuestController],
       providers: [QuestService],
@@ -53,11 +54,17 @@ describe('QuestController', () => {
     app.useGlobalPipes(new ValidationPipe());
     await app.init();
 
-    questRepository = module.get<Repository<Quest>>(getRepositoryToken(Quest));
+    repos = {
+      questRepository: module.get<Repository<Quest>>(getRepositoryToken(Quest)),
+      poolRepository: module.get<Repository<Pool>>(getRepositoryToken(Pool)),
+      poolStateRepository: module.get<Repository<PoolState>>(
+        getRepositoryToken(PoolState),
+      ),
+    };
   });
 
   beforeEach(async () => {
-    await questRepository.query('DELETE FROM quests');
+    await clearTables(repos);
   });
 
   it('should be defined', () => {
@@ -130,11 +137,11 @@ describe('QuestController', () => {
     const findQuery = { where: questDto };
     const questsDto = { quests: [questDto] };
     const expectedHash = Modules.Quest.makeHash(questDto);
-    const questInDbBefore = await questRepository.findOne(findQuery);
+    const questInDbBefore = await repos.questRepository.findOne(findQuery);
 
     await controller.createQuests(questsDto);
 
-    const questInDbAfter = await questRepository.findOne(findQuery);
+    const questInDbAfter = await repos.questRepository.findOne(findQuery);
 
     expect(questInDbBefore).toBeNull();
     expect(questInDbAfter).toBeDefined();

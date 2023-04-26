@@ -60,7 +60,7 @@ export class QuestService {
       {
         kind: DEFAULT_QUEST.KIND,
         content: DEFAULT_QUEST.CONTENT,
-        initial_balance: 100000,
+        initial_balance: DEFAULT_QUEST.INITIAL_BALANCE,
       },
     ]);
 

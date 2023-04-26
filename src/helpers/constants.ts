@@ -14,6 +14,7 @@ export enum POOL_KIND {
 export const DEFAULT_QUEST = {
   KIND: 'TOKEN',
   CONTENT: 'USDC',
+  INITIAL_BALANCE: 1000000000,
   NAME: makeQuestName({ kind: 'TOKEN', content: 'USDC' }),
   HASH: sha256('TOKEN' + 'USDC'),
 };

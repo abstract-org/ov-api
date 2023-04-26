@@ -61,7 +61,10 @@ export async function preparePools(
 }
 
 export async function clearTables(repos) {
-  await repos.poolStateRepository.query('DELETE FROM pool_states');
-  await repos.poolRepository.query('DELETE FROM pools');
-  await repos.questRepository.query('DELETE FROM quests');
+  repos.poolStateRepository &&
+    (await repos.poolStateRepository.query('DELETE FROM pool_states'));
+  repos.poolRepository &&
+    (await repos.poolRepository.query('DELETE FROM pools'));
+  repos.questRepository &&
+    (await repos.questRepository.query('DELETE FROM quests'));
 }

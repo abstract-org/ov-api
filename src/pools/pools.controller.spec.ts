@@ -42,7 +42,7 @@ describe('PoolsController', () => {
             password: configService.get<string>('DB_PASSWORD'),
             database: configService.get<string>('DB_DATABASE'),
             entities: [Quest, Pool, PoolState],
-            synchronize: true,
+            synchronize: false,
           }),
         }),
         TypeOrmModule.forFeature([Pool, Quest, PoolState]),

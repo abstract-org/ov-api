@@ -6,6 +6,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   BaseEntity,
+  JoinColumn,
 } from 'typeorm';
 import { Quest } from './quest.entity';
 import { ApiProperty } from '@nestjs/swagger';
@@ -56,6 +57,7 @@ export class Pool extends BaseEntity {
   quest_left_hash?: string;
 
   @ManyToOne(() => Quest, (quest) => quest.quest_left_pools)
+  @JoinColumn({ name: 'quest_left_hash', referencedColumnName: 'hash' })
   quest_left!: Quest;
 
   @ApiProperty()
@@ -63,5 +65,6 @@ export class Pool extends BaseEntity {
   quest_right_hash?: string;
 
   @ManyToOne(() => Quest, (quest) => quest.quest_right_pools)
+  @JoinColumn({ name: 'quest_right_hash', referencedColumnName: 'hash' })
   quest_right!: Quest;
 }

@@ -59,8 +59,8 @@ export class PoolsService {
       poolStateEntities.push(poolStateEntity);
     }
 
-    await this.poolStateRepository.save(poolStateEntities);
     await this.poolRepository.save(poolEntities);
+    await this.poolStateRepository.save(poolStateEntities);
 
     return poolEntities;
   }
@@ -95,8 +95,8 @@ export class PoolsService {
       poolStateEntities.push(poolStateEntity);
     }
 
-    await this.poolStateRepository.save(poolStateEntities);
     await this.poolRepository.save(poolEntities);
+    await this.poolStateRepository.save(poolStateEntities);
 
     return poolEntities;
   }
