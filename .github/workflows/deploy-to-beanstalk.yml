@@ -41,4 +41,4 @@ jobs:
         run: |
           aws s3 cp Dockerrun.aws.json s3://ovapi-artifacts/Dockerrun.aws.json
           aws elasticbeanstalk create-application-version --application-name ovapi --version-label ${{ github.sha }} --source-bundle S3Bucket=ovapi-artifacts,S3Key=Dockerrun.aws.json
-          aws elasticbeanstalk update-environment --environment-name Ovapi-env--version-label ${{ github.sha }}
+          aws elasticbeanstalk update-environment --environment-name Ovapi-env --version-label ${{ github.sha }}
