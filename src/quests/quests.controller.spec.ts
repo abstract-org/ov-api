@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { QuestController } from './quests.controller';
 import { QuestService } from './quests.service';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
 import { Quest } from '../entities/quest.entity';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Pool } from '../entities/pool.entity';
@@ -12,12 +12,16 @@ import {
   DEFAULT_API_CREATOR_HASH,
   DEFAULT_INITIAL_BALANCE,
 } from '../helpers/constants';
+import { Modules } from '@abstract-org/sdk';
+import { CreateQuestDto } from '../dtos/create-quest.dto';
+import { Repository } from 'typeorm';
 
 describe('QuestController', () => {
   let controller: QuestController;
   let app: INestApplication;
+  let questRepository: Repository<Quest>;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
@@ -48,6 +52,12 @@ describe('QuestController', () => {
     app = module.createNestApplication();
     app.useGlobalPipes(new ValidationPipe());
     await app.init();
+
+    questRepository = module.get<Repository<Quest>>(getRepositoryToken(Quest));
+  });
+
+  beforeEach(async () => {
+    await questRepository.query('DELETE FROM quests');
   });
 
   it('should be defined', () => {
@@ -96,6 +106,39 @@ describe('QuestController', () => {
     expect(createdQuest.content).toBe('test content');
     expect(createdQuest.creator_hash).toBe(DEFAULT_API_CREATOR_HASH);
     expect(createdQuest.initial_balance).toBe(DEFAULT_INITIAL_BALANCE);
+  });
+
+  it('should return correct hash', async () => {
+    const questDto: CreateQuestDto = {
+      kind: 'test',
+      content: 'test content',
+    };
+    const questsDto = { quests: [questDto] };
+    const expectedHash = Modules.Quest.makeHash(questDto);
+
+    const response = await controller.createQuests(questsDto);
+
+    expect(response).toBeDefined();
+    expect(response[0]).toHaveProperty('hash', expectedHash);
+  });
+
+  it('quest in DB should have correct hash', async () => {
+    const questDto: CreateQuestDto = {
+      kind: 'test',
+      content: 'test content',
+    };
+    const findQuery = { where: questDto };
+    const questsDto = { quests: [questDto] };
+    const expectedHash = Modules.Quest.makeHash(questDto);
+    const questInDbBefore = await questRepository.findOne(findQuery);
+
+    await controller.createQuests(questsDto);
+
+    const questInDbAfter = await questRepository.findOne(findQuery);
+
+    expect(questInDbBefore).toBeNull();
+    expect(questInDbAfter).toBeDefined();
+    expect(questInDbAfter).toHaveProperty('hash', expectedHash);
   });
 
   it('should throw validation error for missing fields', async () => {

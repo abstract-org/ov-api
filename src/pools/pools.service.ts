@@ -8,7 +8,12 @@ import { Modules } from '@abstract-org/sdk';
 import { CreateValueLinkDto } from '../dtos/create-value-link.dto';
 import { CreatePositionDto } from '../dtos/create-position.dto';
 import { QuestService } from '../quests/quests.service';
-import { INITIAL_LIQUIDITY, POOL_KIND, POOL_TYPE } from '../helpers/constants';
+import {
+  DEFAULT_PRICE_RANGE_MULTIPLIER,
+  INITIAL_LIQUIDITY,
+  POOL_KIND,
+  POOL_TYPE,
+} from '../helpers/constants';
 
 @Injectable()
 export class PoolsService {
@@ -41,41 +46,23 @@ export class PoolsService {
         );
       }
 
-      const poolEntity = new Pool();
-      poolEntity.quest_left_hash = leftQuest.hash;
-      poolEntity.quest_right_hash = rightQuest.hash;
-      poolEntity.hash = poolInstance.hash;
-      poolEntity.type = POOL_TYPE.QUEST;
-      poolEntity.kind = null;
-      poolEntity.positions = poolInstance.pos.values();
+      const poolEntity = this.poolEntityFromPoolInstance(poolInstance, {
+        quest_left_hash: leftQuest.hash,
+        quest_right_hash: rightQuest.hash,
+        type: POOL_TYPE.QUEST,
+        kind: null,
+      });
+      const poolStateEntity =
+        this.poolStateEntityFromPoolInstance(poolInstance);
 
       poolEntities.push(poolEntity);
-      poolStateEntities.push(
-        this.poolStateEntityFromPoolInstance(poolInstance),
-      );
+      poolStateEntities.push(poolStateEntity);
     }
 
     await this.poolStateRepository.save(poolStateEntities);
     await this.poolRepository.save(poolEntities);
 
     return poolEntities;
-  }
-
-  poolStateEntityFromPoolInstance(pool) {
-    const data = pool.getPoolState();
-    const poolState = new PoolState();
-    poolState.cur_liq = data.curLiq;
-    poolState.cur_price = data.curPrice;
-    poolState.cur_pp = data.curPP;
-    poolState.cur_left = data.curLeft;
-    poolState.cur_right = data.curRight;
-    poolState.quest_left_price = data.questLeftPrice;
-    poolState.quest_right_price = data.questRightPrice;
-    poolState.quest_left_volume = data.questLeftVolume;
-    poolState.quest_right_volume = data.questRightVolume;
-    poolState.pool_hash = pool.hash;
-
-    return poolState;
   }
 
   async createValueLinks(
@@ -92,29 +79,120 @@ export class PoolsService {
         quest_right_hash,
       );
 
+      // TODO: throw Error if leftQuest.hash = defaultQuest.hash || rightQuest.hash = defaultQuest.hash
       const poolInstance = Modules.Pool.create(leftQuest, rightQuest, null);
 
-      const poolEntity = new Pool();
-      poolEntity.quest_left_hash = leftQuest.hash; // TODO: check if equal defaultQuest.hash
-      poolEntity.quest_right_hash = rightQuest.hash;
-      poolEntity.kind = kind;
-      poolEntity.hash = poolInstance.hash;
-      poolEntity.type = 'value-link';
-      poolEntity.positions = poolInstance.pos.values();
+      const poolEntity = this.poolEntityFromPoolInstance(poolInstance, {
+        quest_left_hash: leftQuest.hash,
+        quest_right_hash: rightQuest.hash,
+        type: POOL_TYPE.VALUE_LINK,
+        kind: kind,
+      });
 
+      const poolStateEntity =
+        this.poolStateEntityFromPoolInstance(poolInstance);
       poolEntities.push(poolEntity);
-      poolStateEntities.push(
-        this.poolStateEntityFromPoolInstance(poolInstance),
-      );
+      poolStateEntities.push(poolStateEntity);
     }
 
-    const poolStatesSaved = await this.poolStateRepository.save(
-      poolStateEntities,
-    );
-    console.log('### DEBUG', poolStatesSaved);
+    await this.poolStateRepository.save(poolStateEntities);
     await this.poolRepository.save(poolEntities);
 
     return poolEntities;
+  }
+
+  async createPositions(
+    positionsDtoArray: CreatePositionDto[],
+  ): Promise<Pool[]> {
+    const pools = [] as Pool[];
+    const poolStates = [] as PoolState[];
+    // const defaultQuest = await this.questService.ensureDefaultQuestInstance();
+
+    for (const positionDto of positionsDtoArray) {
+      const { cited_quest, citing_quest, amount } = positionDto;
+
+      const citedQuestPoolEntity = await this.findQuestPool(cited_quest);
+      const citedQuestPool = await this.poolInstanceFromPoolEntity(
+        citedQuestPoolEntity,
+      );
+
+      const citingQuestPoolEntity = await this.findQuestPool(citing_quest);
+      const citingQuestPool = await this.poolInstanceFromPoolEntity(
+        citingQuestPoolEntity,
+      );
+
+      let crossPoolEntity = await this.findPool(cited_quest, citing_quest);
+
+      // FIXME: it may be better to throw NotFoundException instead of creating new crossPool
+      if (!crossPoolEntity) {
+        [crossPoolEntity] = await this.createValueLinks([
+          {
+            kind: POOL_KIND.CITATION, // ??? this is ambiguous (POOL_KIND.BLOCK)
+            quest_left_hash: cited_quest,
+            quest_right_hash: citing_quest,
+          },
+        ]);
+      }
+
+      const crossPool = await this.poolInstanceFromPoolEntity(crossPoolEntity);
+
+      const apiWallet: Modules.Wallet = Modules.Wallet.create(
+        'APIWallet',
+        'ov-api',
+      );
+      const [tradeAmountIn, tradeAmountOut] = citingQuestPool.buy(amount);
+      // not used as we ignore balances:
+      // apiWallet.addBalance(defaultQuest.name, -tradeAmountIn);
+      // apiWallet.addBalance(citingQuest.name, tradeAmountOut);
+
+      const priceRange = apiWallet.calculatePriceRange(
+        crossPool,
+        citedQuestPool,
+        citingQuestPool,
+        positionDto.price_range_multiplier || DEFAULT_PRICE_RANGE_MULTIPLIER,
+      );
+
+      if (!priceRange || isNaN(priceRange.min) || isNaN(priceRange.max)) {
+        throw new NotAcceptableException(
+          `Can not calculate priceRange for pool ${crossPool.hash}`,
+        );
+      }
+
+      // Reset price to find active liquidity during citeQuest
+      crossPool.curPrice = 0;
+      const citationResult = apiWallet.citeQuest(
+        crossPool,
+        priceRange.min,
+        priceRange.max,
+        0,
+        tradeAmountOut,
+        priceRange.native,
+      );
+
+      if (!citationResult) {
+        throw new NotAcceptableException('Cannot cite');
+      }
+
+      const [totalIn, totalOut] = citationResult;
+
+      if (!totalIn && !totalOut) {
+        throw new NotAcceptableException(
+          `Could not open position for pool ${crossPool.hash}`,
+        );
+      }
+
+      crossPoolEntity.positions = crossPool.pos.values();
+
+      const crossPoolStateEntity =
+        this.poolStateEntityFromPoolInstance(crossPool);
+      pools.push(crossPoolEntity);
+      poolStates.push(crossPoolStateEntity);
+    }
+
+    const updatedPools = await this.upsertPoolsByHash(pools);
+    await this.poolStateRepository.save(poolStates);
+
+    return updatedPools;
   }
 
   async findQuestPool(quest_hash: string): Promise<Pool> {
@@ -155,17 +233,13 @@ export class PoolsService {
     });
   }
 
-  async findPoolState(poolEntity: Pool): Promise<PoolState> {
-    const [latestPoolState] = await this.poolStateRepository.find({
-      skip: 0,
-      take: 1,
+  async findLatestPoolState(poolEntity: Pool): Promise<PoolState> {
+    return this.poolStateRepository.findOne({
       where: {
         pool_hash: poolEntity.hash,
       },
       order: { created_at: 'DESC' },
     });
-
-    return latestPoolState;
   }
 
   async savePoolStatesForPoolInstances(
@@ -180,100 +254,82 @@ export class PoolsService {
     return this.poolStateRepository.save(poolStates);
   }
 
-  async createPositions(
-    positionsDtoArray: CreatePositionDto[],
-  ): Promise<Pool[]> {
-    const pools = [] as Pool[];
-    const poolStates = [] as PoolState[];
-    const defaultQuest = await this.questService.ensureDefaultQuestInstance();
+  poolEntityFromPoolInstance(
+    poolInstance: Modules.Pool,
+    data: Partial<Pool>,
+  ): Pool {
+    const poolEntity = new Pool();
+    poolEntity.hash = poolInstance.hash;
+    poolEntity.positions = poolInstance.pos.values();
+    poolEntity.quest_left_hash = data.quest_left_hash;
+    poolEntity.quest_right_hash = data.quest_right_hash;
+    poolEntity.type = data.type;
+    poolEntity.kind = data.kind || null;
 
-    for (const positionDto of positionsDtoArray) {
-      const { cited_quest, citing_quest, amount } = positionDto;
-      const [citedQuest, citingQuest] = await Promise.all([
-        this.questService.questInstanceFromDb(cited_quest),
-        this.questService.questInstanceFromDb(citing_quest),
-      ]);
+    return poolEntity;
+  }
 
-      const citedQuestPoolEntity = await this.findQuestPool(cited_quest);
-      const citedQuestPoolStateEntity = await this.findPoolState(
-        citedQuestPoolEntity,
-      );
-      const citedQuestPool = Modules.Pool.create(
-        defaultQuest,
-        citedQuest,
-        citedQuestPoolStateEntity.cur_price,
-      );
+  poolStateEntityFromPoolInstance(pool: Modules.Pool): PoolState {
+    const data = pool.getPoolState();
+    const poolState = new PoolState();
+    poolState.cur_liq = data.curLiq;
+    poolState.cur_price = data.curPrice;
+    poolState.cur_pp = data.curPP;
+    poolState.cur_left = data.curLeft;
+    poolState.cur_right = data.curRight;
+    poolState.quest_left_price = data.questLeftPrice;
+    poolState.quest_right_price = data.questRightPrice;
+    poolState.quest_left_volume = data.questLeftVolume;
+    poolState.quest_right_volume = data.questRightVolume;
+    poolState.pool_hash = pool.hash;
 
-      const citingQuestPoolEntity = await this.findQuestPool(citing_quest);
-      const citingQuestPoolStateEntity = await this.findPoolState(
-        citingQuestPoolEntity,
-      );
-      const citingQuestPool = Modules.Pool.create(
-        defaultQuest,
-        citingQuest,
-        citingQuestPoolStateEntity.cur_price,
-      );
+    return poolState;
+  }
 
-      const crossPool: Modules.Pool = Modules.Pool.create(
-        citingQuest,
-        citedQuest,
-        0,
-      );
+  async poolInstanceFromPoolEntity(poolEntity: Pool): Promise<Modules.Pool> {
+    const leftQuest = await this.questService.questInstanceFromDb(
+      poolEntity.quest_left_hash,
+    );
+    const rightQuest = await this.questService.questInstanceFromDb(
+      poolEntity.quest_right_hash,
+    );
 
-      const apiWallet: Modules.Wallet = Modules.Wallet.create(
-        'APIWallet',
-        'ov-api',
-      );
-      const [tradeAmountIn, tradeAmountOut] = citingQuestPool.buy(amount);
-      apiWallet.addBalance(citingQuest.name, tradeAmountOut);
+    const pool = Modules.Pool.create(leftQuest, rightQuest, 0);
+    pool.hydratePositions(poolEntity.positions);
+    pool.kind = poolEntity.kind;
+    pool.type = poolEntity.type;
 
-      const PRICE_RANGE_MULTIPLIER = 2; // default in Modules.Wallet
-      const priceRange = apiWallet.calculatePriceRange(
-        crossPool,
-        citedQuestPool,
-        citingQuestPoolEntity,
-        positionDto.price_range_multiplier || PRICE_RANGE_MULTIPLIER,
-      );
-
-      if (!priceRange) {
-        throw new NotAcceptableException(
-          `Can not calculate priceRange for pool ${crossPool.hash}`,
-        );
-      }
-
-      // Reset price to find active liquidity during citeQuest
-      crossPool.curPrice = 0;
-      const [totalIn, totalOut] = apiWallet.citeQuest(
-        crossPool,
-        priceRange.min,
-        priceRange.max,
-        0,
-        amount,
-        priceRange.native,
-      );
-
-      if (!totalIn && !totalOut) {
-        throw new NotAcceptableException(
-          `Could not open position for pool ${crossPool.hash}`,
-        );
-      }
-
-      const crossPoolEntity = new Pool();
-      crossPoolEntity.quest_left_hash = citedQuest.hash;
-      crossPoolEntity.quest_right_hash = citingQuest.hash;
-      crossPoolEntity.kind = POOL_KIND.CITATION;
-      crossPoolEntity.hash = crossPool.hash;
-      crossPoolEntity.type = POOL_TYPE.VALUE_LINK;
-      crossPoolEntity.positions = crossPool.pos.values();
-
-      const crossPoolStateEntity =
-        this.poolStateEntityFromPoolInstance(crossPool);
-      pools.push(crossPoolEntity);
-      poolStates.push(crossPoolStateEntity);
+    const poolState = await this.findLatestPoolState(poolEntity);
+    if (poolState) {
+      pool.curLiq = poolState.cur_liq;
+      pool.curPrice = poolState.cur_price;
+      pool.curPP = poolState.cur_pp;
+      pool.curLeft = poolState.cur_left;
+      pool.curRight = poolState.cur_right;
+      pool.questLeftPrice = poolState.quest_left_price;
+      pool.questRightPrice = poolState.quest_right_price;
+      pool.questLeftVolume = poolState.quest_left_volume;
+      pool.questRightVolume = poolState.quest_right_volume;
     }
 
-    await this.poolRepository.save(pools);
-    await this.poolStateRepository.save(poolStates);
-    return pools;
+    return pool;
+  }
+
+  async upsertPoolsByHash(pools: Pool[]): Promise<Pool[]> {
+    const updatedPools: Pool[] = [];
+
+    for (const pool of pools) {
+      const queryByHash = { where: { hash: pool.hash } };
+      const existedPool = await this.poolRepository.findOne(queryByHash);
+      if (!existedPool) {
+        await this.poolRepository.save(pool);
+      } else {
+        await this.poolRepository.update({ hash: pool.hash }, pool);
+      }
+      const updatedPool = await this.poolRepository.findOne(queryByHash);
+      updatedPools.push(updatedPool);
+    }
+
+    return updatedPools;
   }
 }

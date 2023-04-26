@@ -8,70 +8,15 @@ import { Quest } from '../entities/quest.entity';
 import { PoolState } from '../entities/pool-state.entity';
 import { INestApplication } from '@nestjs/common';
 import { QuestService } from '../quests/quests.service';
-import { CreateQuestDto } from '../dtos/create-quest.dto';
-import { CreatePoolDto } from '../dtos/create-pool.dto';
 import { CreatePositionsDto } from '../dtos/create-positions.dto';
 import * as request from 'supertest';
-import { faker } from '@faker-js/faker';
-import { Modules } from '@abstract-org/sdk';
 import { Repository } from 'typeorm';
 import { POOL_KIND, POOL_TYPE } from '../helpers/constants';
-
-async function prepareQuests(app: INestApplication) {
-  const createQuestsDto: CreateQuestDto[] = [
-    {
-      kind: 'TEST_TITLE',
-      content: faker.lorem.paragraph(),
-      initial_balance: 1000,
-    },
-    {
-      kind: 'TEST_ABSTRACT',
-      content: faker.lorem.paragraph(),
-      initial_balance: 1000,
-    },
-    {
-      kind: 'TEST_BODY',
-      content: faker.lorem.paragraph(),
-      initial_balance: 1000,
-    },
-  ];
-
-  return app.get(QuestService).createQuests(createQuestsDto);
-}
-
-async function preparePools(savedQuests: Quest[], app: INestApplication) {
-  const createPoolsDto: CreatePoolDto[] = savedQuests.map((quest) => ({
-    quest_hash: quest.hash,
-  }));
-  const savedPools = await app.get(PoolsService).createPools(createPoolsDto);
-  const defaultQuestInstance = await app
-    .get(QuestService)
-    .ensureDefaultQuestInstance();
-
-  const poolInstances: Modules.Pool[] = [];
-  for (const poolEntity of savedPools) {
-    const rightQuest = await app
-      .get(QuestService)
-      .questInstanceFromDb(poolEntity.quest_right_hash);
-    const poolInstance = Modules.Pool.create(
-      defaultQuestInstance,
-      rightQuest,
-      0,
-    );
-    poolInstance.hydratePositions(poolEntity.positions);
-    poolInstances.push(poolInstance);
-  }
-
-  await app.get(PoolsService).savePoolStatesForPoolInstances(poolInstances);
-
-  return savedPools;
-}
-
-async function clearTables(repos) {
-  await repos.poolStateRepository.query('DELETE FROM pool_states');
-  await repos.poolRepository.query('DELETE FROM pools');
-  await repos.questRepository.query('DELETE FROM quests');
-}
+import {
+  clearTables,
+  preparePools,
+  prepareQuests,
+} from '../../test/helpers/testHelpers';
 
 describe('PoolsController', () => {
   let controller: PoolsController;
@@ -260,36 +205,7 @@ describe('PoolsController', () => {
       ]);
     });
 
-    it('should create a new position and return an array of created pools', async () => {
-      const createPositionsDto: CreatePositionsDto = {
-        positions: [
-          {
-            cited_quest: savedQuests[0].hash,
-            citing_quest: savedQuests[1].hash,
-            amount: 100,
-            price_range_multiplier: 4,
-          },
-          {
-            cited_quest: savedQuests[1].hash,
-            citing_quest: savedQuests[2].hash,
-            amount: 200,
-          },
-        ],
-      };
-
-      const response = await controller.createPosition(createPositionsDto);
-      response.forEach((pool: Pool) => {
-        expect(pool).toHaveProperty('id');
-        expect(pool).toHaveProperty('hash');
-        expect(pool).toHaveProperty('quest_left_hash');
-        expect(pool).toHaveProperty('quest_right_hash');
-        expect(pool).toHaveProperty('kind', POOL_KIND.CITATION);
-        expect(pool).toHaveProperty('type', POOL_TYPE.VALUE_LINK);
-        expect(pool).toHaveProperty('positions');
-      });
-    });
-
-    it('should return an error when the quest is not found', async () => {
+    it('should return an error when quest not found', async () => {
       const createPositionsDto: CreatePositionsDto = {
         positions: [
           {
@@ -308,6 +224,46 @@ describe('PoolsController', () => {
       expect(response.body.message).toBe(
         'Quest not found for hash: nonexistent-hash',
       );
+    });
+
+    it('should create a new position and return an array of updated pools', async () => {
+      const createPositionsDto: CreatePositionsDto = {
+        positions: [
+          {
+            cited_quest: savedQuests[0].hash,
+            citing_quest: savedQuests[1].hash,
+            amount: 50,
+            price_range_multiplier: 4,
+          },
+          {
+            cited_quest: savedQuests[1].hash,
+            citing_quest: savedQuests[2].hash,
+            amount: 100,
+          },
+        ],
+      };
+
+      await controller.createPosition(createPositionsDto);
+
+      for (const createPositionDto of createPositionsDto.positions) {
+        const updatedPool = await repos.poolRepository.findOne({
+          where: {
+            quest_left_hash: createPositionDto.cited_quest,
+            quest_right_hash: createPositionDto.citing_quest,
+          },
+        });
+        const crossPool = crossPools.find(
+          (pool) =>
+            pool.quest_left_hash === createPositionDto.cited_quest &&
+            pool.quest_right_hash === createPositionDto.citing_quest,
+        );
+        expect(updatedPool).toBeDefined();
+        expect(crossPool).toBeDefined();
+        expect(updatedPool.kind).toBe(crossPool.kind);
+        expect(updatedPool.type).toBe(POOL_TYPE.VALUE_LINK);
+        expect(updatedPool).toHaveProperty('positions');
+        expect(updatedPool.positions).toHaveLength(3 + 2); // 3 base positions + 2 new opposite
+      }
     });
   });
 

@@ -20,6 +20,7 @@ export const DEFAULT_QUEST = {
 
 export const DEFAULT_INITIAL_BALANCE = 0;
 export const DEFAULT_API_CREATOR_HASH = '111111111111111111111';
+export const DEFAULT_PRICE_RANGE_MULTIPLIER = 2;
 
 export const INITIAL_LIQUIDITY = [
   {
