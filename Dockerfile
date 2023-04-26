@@ -8,16 +8,16 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN yarn
 
 # Copy the source code to the container
 COPY . .
 
 # Build the application
-RUN npm run build
+RUN yarn build
 
 # Expose the application port (3000 is the default port for a NestJS app)
 EXPOSE 3000
 
 # Start the application
-CMD ["npm", "start:prod"]
+CMD ["yarn", "start:prod"]
