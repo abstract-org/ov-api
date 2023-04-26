@@ -15,6 +15,7 @@ import { QuestService } from './quests/quests.service';
 import { PoolsService } from './pools/pools.service';
 import { QuestsModule } from './quests/quests.module';
 import { PoolsModule } from './pools/pools.module';
+import { getSecret } from './utils/getSecret';
 
 @Module({
   imports: [
@@ -25,12 +26,12 @@ import { PoolsModule } from './pools/pools.module';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService, dbPass: string) => ({
         type: 'postgres',
         host: configService.get<string>('DB_HOST'),
         port: configService.get<number>('DB_PORT'),
         username: configService.get<string>('DB_USERNAME'),
-        password: configService.get<string>('DB_PASSWORD'),
+        password: dbPass,
         database: configService.get<string>('DB_DATABASE'),
         entities: [Quest, Pool, PoolState],
         synchronize: false,
@@ -48,6 +49,16 @@ import { PoolsModule } from './pools/pools.module';
     PoolsModule,
   ],
   controllers: [AppController, QuestController, PoolsController],
-  providers: [AppService, QuestService, PoolsService],
+  providers: [
+    AppService,
+    QuestService,
+    PoolsService,
+    {
+      provide: 'DB_PASS',
+      useFactory: async () => {
+        return await getSecret('SUPABASE_OPENVALUE_DEV_DB');
+      },
+    },
+  ],
 })
 export class AppModule {}
