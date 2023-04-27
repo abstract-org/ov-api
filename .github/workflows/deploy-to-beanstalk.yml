@@ -31,7 +31,12 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        with:
+          context: .
+          file: Dockerfile.prod
 
       - name: Log out of Amazon ECR
         if: always()
@@ -40,5 +45,5 @@ jobs:
       - name: Deploy to Beanstalk
         run: |
           aws s3 cp Dockerrun.aws.json s3://ovapi-artifacts/Dockerrun.aws.json
-          aws elasticbeanstalk create-application-version --application-name ovapi --version-label ${{ github.sha }} --source-bundle S3Bucket=ovapi-artifacts,S3Key=Dockerrun.aws.json
-          aws elasticbeanstalk update-environment --environment-name Ovapi-env --version-label ${{ github.sha }}
+          aws elasticbeanstalk create-application-version --application-name ovapi --version-label ${{ github.sha }} --source-bundle S3Bucket="ovapi-artifacts",S3Key=Dockerrun.aws.json
+          aws elasticbeanstalk update-environment --environment-name ovapi-env-dev --version-label ${{ github.sha }}
