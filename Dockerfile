@@ -13,10 +13,11 @@ COPY yarn.lock ./
 # Install dependencies
 RUN yarn
 
+COPY . .
+
 # Build the application
 RUN yarn build
 
-COPY . ./
 
 # Expose the application port (3000 is the default port for a NestJS app)
 EXPOSE 3000
